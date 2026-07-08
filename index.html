@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="开局平衡器">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>开局平衡器</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #d9dee7;
+      --blue: #2563eb;
+      --green: #16803a;
+      --amber: #a35b00;
+      --red: #c62828;
+      --soft: #eef2f7;
+      --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, textarea {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      padding: calc(12px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 4px 0 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.15;
+      font-weight: 800;
+    }
+
+    .threshold {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+
+    .section-title {
+      margin: 0 0 10px;
+      color: #0f5f9d;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .file-btn,
+    .primary-btn,
+    .ghost-btn {
+      min-height: 44px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .file-btn,
+    .primary-btn {
+      background: var(--blue);
+      color: white;
+    }
+
+    .ghost-btn {
+      background: white;
+      color: var(--blue);
+      border-color: #9ab8ff;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }
+
+    .preview {
+      display: none;
+      width: 100%;
+      max-height: 260px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111827;
+      margin: 10px 0;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfe;
+      color: var(--ink);
+      outline: none;
+    }
+
+    textarea:focus,
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .player-row {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 82px;
+      gap: 8px;
+      align-items: center;
+      background: var(--soft);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 8px;
+    }
+
+    .player-row.invalid {
+      border-color: rgba(198, 40, 40, 0.55);
+      background: #fff5f5;
+    }
+
+    .slot {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: #111827;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .player-row input {
+      min-width: 0;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: white;
+      color: var(--ink);
+    }
+
+    .score {
+      text-align: center;
+      font-weight: 800;
+    }
+
+    .status {
+      margin-top: 10px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .status.bad { color: var(--red); }
+    .status.good { color: var(--green); }
+    .status.warn { color: var(--amber); }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .team {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfe;
+    }
+
+    .team-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .team-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .team-total {
+      color: var(--muted);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .team ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .team li {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: #334155;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .meta {
+      margin: 10px 0 0;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--soft);
+      color: #334155;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .footer-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    @media (min-width: 760px) {
+      .grid {
+        grid-template-columns: 1.05fr 0.95fr;
+        align-items: start;
+      }
+
+      .result-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>开局平衡器</h1>
+      <div class="threshold">4v4 · 分差≤0.25</div>
+    </header>
+
+    <section class="grid">
+      <div class="panel">
+        <p class="section-title">Capture</p>
+        <div class="actions">
+          <label class="file-btn" for="photoInput">拍照/选图</label>
+          <button class="ghost-btn" type="button" id="loadSample">示例</button>
+        </div>
+        <input id="photoInput" type="file" accept="image/*" capture="environment">
+        <img class="preview" id="preview" alt="房间截图预览">
+        <textarea id="bulkText" placeholder="_XJL_喜福来_5.75&#10;_XJL_平静_6&#10;_XJL_齐摩托_5.75&#10;_XJL_浩然_5.75&#10;_XJL_莱爷_Y6&#10;_XJL_峥峥_5.5&#10;_XJL_熊哥小菜_5.75&#10;_XJL_寒光_5.5"></textarea>
+        <div class="footer-actions">
+          <button class="primary-btn" type="button" id="parseText">填入 8 人</button>
+          <button class="ghost-btn" type="button" id="clearAll">清空</button>
+        </div>
+        <div class="status" id="parseStatus"></div>
+      </div>
+
+      <div class="panel">
+        <p class="section-title">Players</p>
+        <div class="players" id="players"></div>
+        <div class="footer-actions">
+          <button class="primary-btn" type="button" id="balance">生成分组</button>
+          <button class="ghost-btn" type="button" id="copyResult">复制结果</button>
+        </div>
+        <div class="status" id="validationStatus"></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:12px;">
+      <p class="section-title">Result</p>
+      <div class="result-grid" id="result"></div>
+      <div class="meta" id="summary">等待生成分组</div>
+    </section>
+  </main>
+
+  <script>
+    const playerCount = 8;
+    const maxDiffUnits = 1;
+    const samplePlayers = [
+      "_XJL_喜福来_5.75",
+      "_XJL_平静_6",
+      "_XJL_齐摩托_5.75",
+      "_XJL_浩然_5.75",
+      "_XJL_莱爷_Y6",
+      "_XJL_峥峥_5.5",
+      "_XJL_熊哥小菜_5.75",
+      "_XJL_寒光_5.5"
+    ];
+
+    const playersEl = document.getElementById("players");
+    const resultEl = document.getElementById("result");
+    const summaryEl = document.getElementById("summary");
+    const parseStatusEl = document.getElementById("parseStatus");
+    const validationStatusEl = document.getElementById("validationStatus");
+    const bulkTextEl = document.getElementById("bulkText");
+    const previewEl = document.getElementById("preview");
+    let lastResultText = "";
+
+    function makeRows() {
+      playersEl.innerHTML = "";
+      for (let i = 0; i < playerCount; i += 1) {
+        const row = document.createElement("div");
+        row.className = "player-row";
+        row.dataset.index = String(i);
+        row.innerHTML = `
+          <div class="slot">${i + 1}P</div>
+          <input class="id-input" autocomplete="off" placeholder="玩家 ID">
+          <input class="score score-input" inputmode="decimal" autocomplete="off" placeholder="分数">
+        `;
+        playersEl.appendChild(row);
+      }
+      playersEl.addEventListener("input", () => {
+        validateRows();
+        saveState();
+      });
+    }
+
+    function parsePlayerId(raw) {
+      const id = raw.trim();
+      const match = id.match(/^(.+)_([Yy]?)(\d+(?:\.\d+)?)$/);
+      if (!match) return { id, score: "", valid: false };
+      const score = normalizeScore(match[3]);
+      return { id, score, valid: score !== "" };
+    }
+
+    function normalizeScore(value) {
+      if (value === null || value === undefined) return "";
+      const text = String(value).trim();
+      if (!/^\d+(?:\.\d+)?$/.test(text)) return "";
+      const numeric = Number(text);
+      if (!Number.isFinite(numeric)) return "";
+      const units = Math.round(numeric * 4);
+      if (Math.abs(numeric * 4 - units) > 0.0001) return "";
+      return formatUnits(units);
+    }
+
+    function scoreToUnits(value) {
+      const normalized = normalizeScore(value);
+      if (normalized === "") return null;
+      return Math.round(Number(normalized) * 4);
+    }
+
+    function formatUnits(units) {
+      const value = units / 4;
+      return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0$/, "");
+    }
+
+    function getRows() {
+      return Array.from(document.querySelectorAll(".player-row")).map((row, index) => {
+        const idInput = row.querySelector(".id-input");
+        const scoreInput = row.querySelector(".score-input");
+        return {
+          index,
+          slot: `${index + 1}P`,
+          id: idInput.value.trim(),
+          score: scoreInput.value.trim(),
+          units: scoreToUnits(scoreInput.value)
+        };
+      });
+    }
+
+    function setRows(ids) {
+      const rows = Array.from(document.querySelectorAll(".player-row"));
+      rows.forEach((row, index) => {
+        const parsed = parsePlayerId(ids[index] || "");
+        row.querySelector(".id-input").value = parsed.id;
+        row.querySelector(".score-input").value = parsed.score;
+      });
+      validateRows();
+      saveState();
+    }
+
+    function validateRows() {
+      const rows = getRows();
+      let ok = true;
+      rows.forEach((item) => {
+        const row = document.querySelector(`.player-row[data-index="${item.index}"]`);
+        const invalid = item.id === "" || item.units === null;
+        row.classList.toggle("invalid", invalid);
+        if (invalid) ok = false;
+      });
+      validationStatusEl.textContent = ok ? "8 名玩家已就绪" : "有玩家 ID 或战力值需要校对";
+      validationStatusEl.className = `status ${ok ? "good" : "warn"}`;
+      return ok;
+    }
+
+    function parseBulkText() {
+      const lines = bulkTextEl.value
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length < playerCount) {
+        parseStatusEl.textContent = `只找到 ${lines.length} 行，至少需要 8 行`;
+        parseStatusEl.className = "status bad";
+        return;
+      }
+      setRows(lines.slice(0, playerCount));
+      parseStatusEl.textContent = `已填入前 8 行`;
+      parseStatusEl.className = "status good";
+    }
+
+    function bestBalance(players) {
+      const total = players.reduce((sum, item) => sum + item.units, 0);
+      let best = null;
+      for (let a = 0; a < 5; a += 1) {
+        for (let b = a + 1; b < 6; b += 1) {
+          for (let c = b + 1; c < 7; c += 1) {
+            for (let d = c + 1; d < 8; d += 1) {
+              const indexes = new Set([a, b, c, d]);
+              const teamA = players.filter((_, index) => indexes.has(index));
+              const teamB = players.filter((_, index) => !indexes.has(index));
+              const totalA = teamA.reduce((sum, item) => sum + item.units, 0);
+              const totalB = total - totalA;
+              const diff = Math.abs(totalA - totalB);
+              if (!best || diff < best.diff) {
+                best = { teamA, teamB, totalA, totalB, diff };
+              }
+            }
+          }
+        }
+      }
+      return best;
+    }
+
+    function renderTeam(title, team, total) {
+      const items = team.map((player) => `
+        <li>
+          <span class="name">${player.slot} ${escapeHtml(player.id)}</span>
+          <strong>${formatUnits(player.units)}</strong>
+        </li>
+      `).join("");
+      return `
+        <div class="team">
+          <div class="team-head">
+            <h2 class="team-title">${title}</h2>
+            <div class="team-total">${formatUnits(total)}</div>
+          </div>
+          <ul>${items}</ul>
+        </div>
+      `;
+    }
+
+    function balanceNow() {
+      if (!validateRows()) return;
+      const players = getRows();
+      const best = bestBalance(players);
+      resultEl.innerHTML = renderTeam("A 队", best.teamA, best.totalA) + renderTeam("B 队", best.teamB, best.totalB);
+      const diffText = formatUnits(best.diff);
+      let state = "当前无法达到 0.25 以内，已给出最接近方案";
+      let stateClass = "warn";
+      if (best.diff === 0) {
+        state = "完美平衡";
+        stateClass = "good";
+      } else if (best.diff <= maxDiffUnits) {
+        state = "平衡";
+        stateClass = "good";
+      }
+      summaryEl.textContent = `分差 ${diffText} · ${state}`;
+      summaryEl.style.color = stateClass === "good" ? "var(--green)" : "var(--amber)";
+      lastResultText = buildResultText(best, state);
+      saveState();
+    }
+
+    function buildResultText(best, state) {
+      const lines = [];
+      lines.push(`开局分组：${state}`);
+      lines.push(`分差：${formatUnits(best.diff)}`);
+      lines.push("");
+      lines.push(`A队 ${formatUnits(best.totalA)}`);
+      best.teamA.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
+      lines.push("");
+      lines.push(`B队 ${formatUnits(best.totalB)}`);
+      best.teamB.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
+      return lines.join("\n");
+    }
+
+    async function copyResult() {
+      if (!lastResultText) balanceNow();
+      if (!lastResultText) return;
+      try {
+        await navigator.clipboard.writeText(lastResultText);
+        validationStatusEl.textContent = "结果已复制";
+        validationStatusEl.className = "status good";
+      } catch {
+        validationStatusEl.textContent = "复制失败，请长按结果手动复制";
+        validationStatusEl.className = "status bad";
+      }
+    }
+
+    function clearAll() {
+      bulkTextEl.value = "";
+      setRows(Array(playerCount).fill(""));
+      resultEl.innerHTML = "";
+      summaryEl.textContent = "等待生成分组";
+      summaryEl.style.color = "#334155";
+      parseStatusEl.textContent = "";
+      lastResultText = "";
+      localStorage.removeItem("rts-balance-state");
+    }
+
+    function saveState() {
+      const state = {
+        rows: getRows().map((row) => ({ id: row.id, score: row.score })),
+        bulkText: bulkTextEl.value,
+        lastResultText
+      };
+      localStorage.setItem("rts-balance-state", JSON.stringify(state));
+    }
+
+    function loadState() {
+      const raw = localStorage.getItem("rts-balance-state");
+      if (!raw) {
+        setRows(samplePlayers);
+        return;
+      }
+      try {
+        const state = JSON.parse(raw);
+        const rows = Array.isArray(state.rows) ? state.rows : [];
+        const ids = rows.map((row) => row.id || "");
+        setRows(ids);
+        rows.forEach((row, index) => {
+          const el = document.querySelector(`.player-row[data-index="${index}"] .score-input`);
+          if (el && row.score) el.value = row.score;
+        });
+        bulkTextEl.value = state.bulkText || "";
+        lastResultText = state.lastResultText || "";
+        validateRows();
+      } catch {
+        setRows(samplePlayers);
+      }
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    document.getElementById("parseText").addEventListener("click", parseBulkText);
+    document.getElementById("balance").addEventListener("click", balanceNow);
+    document.getElementById("copyResult").addEventListener("click", copyResult);
+    document.getElementById("clearAll").addEventListener("click", clearAll);
+    document.getElementById("loadSample").addEventListener("click", () => {
+      bulkTextEl.value = samplePlayers.join("\n");
+      parseBulkText();
+      balanceNow();
+    });
+    document.getElementById("photoInput").addEventListener("change", (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      previewEl.src = URL.createObjectURL(file);
+      previewEl.style.display = "block";
+      parseStatusEl.textContent = "照片已载入，请在下方校对玩家 ID 和战力值";
+      parseStatusEl.className = "status warn";
+    });
+    bulkTextEl.addEventListener("input", saveState);
+
+    makeRows();
+    loadState();
+    validateRows();
+
+    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

@@ -297,6 +297,25 @@
       margin-top: 12px;
     }
 
+    .full-btn {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .solution {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: white;
+    }
+
+    .solution-title {
+      margin: 0 0 10px;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
     @media (min-width: 760px) {
       .grid {
         grid-template-columns: 1.05fr 0.95fr;
@@ -330,6 +349,7 @@
           <button class="primary-btn" type="button" id="parseText">填入 8 人</button>
           <button class="ghost-btn" type="button" id="clearAll">清空</button>
         </div>
+        <button class="ghost-btn full-btn" type="button" id="recognizePhoto">识别图片</button>
         <div class="status" id="parseStatus"></div>
       </div>
 
@@ -351,6 +371,7 @@
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script>
     const playerCount = 8;
     const maxDiffUnits = 1;
@@ -372,6 +393,8 @@
     const validationStatusEl = document.getElementById("validationStatus");
     const bulkTextEl = document.getElementById("bulkText");
     const previewEl = document.getElementById("preview");
+    const recognizePhotoBtn = document.getElementById("recognizePhoto");
+    let currentImageFile = null;
     let lastResultText = "";
 
     function makeRows() {
@@ -477,27 +500,121 @@
       parseStatusEl.className = "status good";
     }
 
-    function bestBalance(players) {
+    function normalizeOcrText(text) {
+      return text
+        .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 65248))
+        .replace(/[Ａ-Ｚａ-ｚ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 65248))
+        .replace(/[＿﹍﹎]/g, "_")
+        .replace(/[，。]/g, ".")
+        .replace(/[：]/g, ":");
+    }
+
+    function cleanOcrLine(line) {
+      return normalizeOcrText(line)
+        .replace(/[|｜]/g, "I")
+        .replace(/[—–-]+/g, "_")
+        .replace(/\s+/g, "")
+        .replace(/__+/g, "_")
+        .trim();
+    }
+
+    function extractPlayerIdsFromOcr(text) {
+      const seen = new Set();
+      const players = [];
+      normalizeOcrText(text)
+        .split(/\n+/)
+        .map(cleanOcrLine)
+        .filter(Boolean)
+        .forEach((line) => {
+          const prefixIndex = line.search(/_?[Xx][Jj][Ll]_/);
+          if (prefixIndex < 0) return;
+          let candidate = line.slice(prefixIndex);
+          const scoreMatch = candidate.match(/([Yy]?\d+(?:\.\d{1,2})?)\D*$/);
+          if (!scoreMatch) return;
+          candidate = candidate.slice(0, scoreMatch.index) + scoreMatch[1];
+          if (!/^_/.test(candidate)) candidate = `_${candidate}`;
+          const parsed = parsePlayerId(candidate);
+          if (!parsed.valid || seen.has(parsed.id)) return;
+          seen.add(parsed.id);
+          players.push(parsed.id);
+        });
+      return players;
+    }
+
+    async function recognizePhoto() {
+      if (!currentImageFile) {
+        parseStatusEl.textContent = "请先拍照或选择图片";
+        parseStatusEl.className = "status warn";
+        return;
+      }
+      if (!window.Tesseract) {
+        parseStatusEl.textContent = "识别组件没有加载成功，请检查手机网络，或先手动输入";
+        parseStatusEl.className = "status bad";
+        return;
+      }
+      recognizePhotoBtn.disabled = true;
+      recognizePhotoBtn.textContent = "识别中...";
+      parseStatusEl.textContent = "正在识别图片，完成后请校对右侧 8 人信息";
+      parseStatusEl.className = "status warn";
+      try {
+        const result = await Tesseract.recognize(currentImageFile, "chi_sim+eng", {
+          logger: (message) => {
+            if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+              const percent = Math.round(message.progress * 100);
+              parseStatusEl.textContent = `正在识别图片 ${percent}%`;
+            }
+          }
+        });
+        const players = extractPlayerIdsFromOcr(result.data.text);
+        if (players.length >= playerCount) {
+          bulkTextEl.value = players.slice(0, playerCount).join("\n");
+          parseBulkText();
+          parseStatusEl.textContent = `识别到 ${players.length} 个玩家，已填入前 8 个，请校对`;
+          parseStatusEl.className = "status good";
+        } else {
+          bulkTextEl.value = players.join("\n");
+          if (players.length > 0) setRows(players.concat(Array(playerCount - players.length).fill("")));
+          parseStatusEl.textContent = `只识别到 ${players.length} 个玩家，请在输入框里补齐或修正`;
+          parseStatusEl.className = "status warn";
+        }
+      } catch {
+        parseStatusEl.textContent = "图片识别失败，请换一张更清晰的图，或先手动输入";
+        parseStatusEl.className = "status bad";
+      } finally {
+        recognizePhotoBtn.disabled = false;
+        recognizePhotoBtn.textContent = "识别图片";
+        saveState();
+      }
+    }
+
+    function findBestBalances(players) {
       const total = players.reduce((sum, item) => sum + item.units, 0);
-      let best = null;
+      let bestDiff = null;
+      const solutions = [];
       for (let a = 0; a < 5; a += 1) {
         for (let b = a + 1; b < 6; b += 1) {
           for (let c = b + 1; c < 7; c += 1) {
             for (let d = c + 1; d < 8; d += 1) {
               const indexes = new Set([a, b, c, d]);
+              if (!indexes.has(0)) continue;
               const teamA = players.filter((_, index) => indexes.has(index));
               const teamB = players.filter((_, index) => !indexes.has(index));
               const totalA = teamA.reduce((sum, item) => sum + item.units, 0);
               const totalB = total - totalA;
               const diff = Math.abs(totalA - totalB);
-              if (!best || diff < best.diff) {
-                best = { teamA, teamB, totalA, totalB, diff };
+              const solution = { teamA, teamB, totalA, totalB, diff };
+              if (bestDiff === null || diff < bestDiff) {
+                bestDiff = diff;
+                solutions.length = 0;
+                solutions.push(solution);
+              } else if (diff === bestDiff) {
+                solutions.push(solution);
               }
             }
           }
         }
       }
-      return best;
+      return solutions;
     }
 
     function renderTeam(title, team, total) {
@@ -518,11 +635,24 @@
       `;
     }
 
+    function renderSolution(solution, index) {
+      return `
+        <div class="solution">
+          <p class="solution-title">方案 ${index + 1}</p>
+          <div class="result-grid">
+            ${renderTeam("A 队", solution.teamA, solution.totalA)}
+            ${renderTeam("B 队", solution.teamB, solution.totalB)}
+          </div>
+        </div>
+      `;
+    }
+
     function balanceNow() {
       if (!validateRows()) return;
       const players = getRows();
-      const best = bestBalance(players);
-      resultEl.innerHTML = renderTeam("A 队", best.teamA, best.totalA) + renderTeam("B 队", best.teamB, best.totalB);
+      const solutions = findBestBalances(players);
+      const best = solutions[0];
+      resultEl.innerHTML = solutions.map(renderSolution).join("");
       const diffText = formatUnits(best.diff);
       let state = "当前无法达到 0.25 以内，已给出最接近方案";
       let stateClass = "warn";
@@ -533,22 +663,29 @@
         state = "平衡";
         stateClass = "good";
       }
-      summaryEl.textContent = `分差 ${diffText} · ${state}`;
+      const solutionText = solutions.length === 1 ? "1 个方案" : `${solutions.length} 个并列方案`;
+      summaryEl.textContent = `分差 ${diffText} · ${state} · ${solutionText}`;
       summaryEl.style.color = stateClass === "good" ? "var(--green)" : "var(--amber)";
-      lastResultText = buildResultText(best, state);
+      lastResultText = buildResultText(solutions, state);
       saveState();
     }
 
-    function buildResultText(best, state) {
+    function buildResultText(solutions, state) {
+      const best = solutions[0];
       const lines = [];
       lines.push(`开局分组：${state}`);
       lines.push(`分差：${formatUnits(best.diff)}`);
+      lines.push(`并列方案：${solutions.length}`);
       lines.push("");
-      lines.push(`A队 ${formatUnits(best.totalA)}`);
-      best.teamA.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
-      lines.push("");
-      lines.push(`B队 ${formatUnits(best.totalB)}`);
-      best.teamB.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
+      solutions.forEach((solution, index) => {
+        lines.push(`方案 ${index + 1}`);
+        lines.push(`A队 ${formatUnits(solution.totalA)}`);
+        solution.teamA.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
+        lines.push("");
+        lines.push(`B队 ${formatUnits(solution.totalB)}`);
+        solution.teamB.forEach((player) => lines.push(`${player.slot} ${player.id} ${formatUnits(player.units)}`));
+        lines.push("");
+      });
       return lines.join("\n");
     }
 
@@ -627,12 +764,14 @@
       parseBulkText();
       balanceNow();
     });
+    recognizePhotoBtn.addEventListener("click", recognizePhoto);
     document.getElementById("photoInput").addEventListener("change", (event) => {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
+      currentImageFile = file;
       previewEl.src = URL.createObjectURL(file);
       previewEl.style.display = "block";
-      parseStatusEl.textContent = "照片已载入，请在下方校对玩家 ID 和战力值";
+      parseStatusEl.textContent = "照片已载入，可点“识别图片”，识别后仍需校对";
       parseStatusEl.className = "status warn";
     });
     bulkTextEl.addEventListener("input", saveState);

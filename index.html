@@ -332,7 +332,7 @@
   <main class="app">
     <header class="topbar">
       <h1>开局平衡器</h1>
-      <div class="threshold">4v4 · 分差≤0.25</div>
+      <div class="threshold">4v4 · 强弱分开 · 分差≤0.25</div>
     </header>
 
     <section class="grid">
@@ -587,10 +587,35 @@
       }
     }
 
+    function getSplitRulePairs(players) {
+      const strongest = [...players]
+        .sort((a, b) => b.units - a.units || a.index - b.index)
+        .slice(0, 2);
+      const weakest = [...players]
+        .sort((a, b) => a.units - b.units || a.index - b.index)
+        .slice(0, 2);
+      return { strongest, weakest };
+    }
+
+    function hasOneFromPair(teamIndexes, pair) {
+      return pair.filter((player) => teamIndexes.has(player.index)).length === 1;
+    }
+
+    function passesSplitRules(teamIndexes, rulePairs) {
+      return hasOneFromPair(teamIndexes, rulePairs.strongest) && hasOneFromPair(teamIndexes, rulePairs.weakest);
+    }
+
+    function describeRulePairs(rulePairs) {
+      const strongest = rulePairs.strongest.map((player) => `${player.slot} ${player.id}`).join(" / ");
+      const weakest = rulePairs.weakest.map((player) => `${player.slot} ${player.id}`).join(" / ");
+      return `最高两人分开：${strongest}；最低两人分开：${weakest}`;
+    }
+
     function findBestBalances(players) {
       const total = players.reduce((sum, item) => sum + item.units, 0);
-      let bestDiff = null;
-      const solutions = [];
+      const rulePairs = getSplitRulePairs(players);
+      const allSolutions = [];
+      const ruleSolutions = [];
       for (let a = 0; a < 5; a += 1) {
         for (let b = a + 1; b < 6; b += 1) {
           for (let c = b + 1; c < 7; c += 1) {
@@ -602,19 +627,22 @@
               const totalA = teamA.reduce((sum, item) => sum + item.units, 0);
               const totalB = total - totalA;
               const diff = Math.abs(totalA - totalB);
-              const solution = { teamA, teamB, totalA, totalB, diff };
-              if (bestDiff === null || diff < bestDiff) {
-                bestDiff = diff;
-                solutions.length = 0;
-                solutions.push(solution);
-              } else if (diff === bestDiff) {
-                solutions.push(solution);
-              }
+              const rulesPassed = passesSplitRules(indexes, rulePairs);
+              const solution = { teamA, teamB, totalA, totalB, diff, rulesPassed };
+              allSolutions.push(solution);
+              if (rulesPassed) ruleSolutions.push(solution);
             }
           }
         }
       }
-      return solutions;
+      const candidatePool = ruleSolutions.length > 0 ? ruleSolutions : allSolutions;
+      const bestDiff = Math.min(...candidatePool.map((solution) => solution.diff));
+      const solutions = candidatePool.filter((solution) => solution.diff === bestDiff);
+      return {
+        solutions,
+        rulePairs,
+        rulesApplied: ruleSolutions.length > 0
+      };
     }
 
     function renderTeam(title, team, total) {
@@ -650,7 +678,8 @@
     function balanceNow() {
       if (!validateRows()) return;
       const players = getRows();
-      const solutions = findBestBalances(players);
+      const balance = findBestBalances(players);
+      const solutions = balance.solutions;
       const best = solutions[0];
       resultEl.innerHTML = solutions.map(renderSolution).join("");
       const diffText = formatUnits(best.diff);
@@ -664,18 +693,21 @@
         stateClass = "good";
       }
       const solutionText = solutions.length === 1 ? "1 个方案" : `${solutions.length} 个并列方案`;
-      summaryEl.textContent = `分差 ${diffText} · ${state} · ${solutionText}`;
+      const rulesText = balance.rulesApplied ? "已满足强弱分开" : "没有方案能同时满足强弱分开，已退回最小分差";
+      summaryEl.textContent = `分差 ${diffText} · ${state} · ${solutionText} · ${rulesText}`;
       summaryEl.style.color = stateClass === "good" ? "var(--green)" : "var(--amber)";
-      lastResultText = buildResultText(solutions, state);
+      lastResultText = buildResultText(solutions, state, balance);
       saveState();
     }
 
-    function buildResultText(solutions, state) {
+    function buildResultText(solutions, state, balance) {
       const best = solutions[0];
       const lines = [];
       lines.push(`开局分组：${state}`);
       lines.push(`分差：${formatUnits(best.diff)}`);
       lines.push(`并列方案：${solutions.length}`);
+      lines.push(balance.rulesApplied ? "规则：最高两人分开，最低两人分开" : "规则：未找到同时满足强弱分开的方案");
+      lines.push(describeRulePairs(balance.rulePairs));
       lines.push("");
       solutions.forEach((solution, index) => {
         lines.push(`方案 ${index + 1}`);

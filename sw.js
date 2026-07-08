@@ -1,4 +1,4 @@
-const CACHE_NAME = "rts-balance-v2";
+const CACHE_NAME = "rts-balance-v3";
 const ASSETS = [
   "./",
   "./index.html",
